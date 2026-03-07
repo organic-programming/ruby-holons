@@ -3,7 +3,7 @@
 require "yaml"
 
 module Holons
-  # Parsed identity from a HOLON.md file.
+  # Parsed identity from a holon.yaml file.
   HolonIdentity = Struct.new(
     :uuid, :given_name, :family_name, :motto, :composer,
     :clade, :status, :born, :lang,
@@ -11,16 +11,11 @@ module Holons
   )
 
   module Identity
-    # Parse a HOLON.md file.
+    # Parse a holon.yaml file.
     def self.parse_holon(path)
       text = File.read(path)
-      raise "#{path}: missing YAML frontmatter" unless text.start_with?("---")
-
-      end_idx = text.index("---", 3)
-      raise "#{path}: unterminated frontmatter" unless end_idx
-
-      frontmatter = text[3...end_idx].strip
-      data = YAML.safe_load(frontmatter) || {}
+      data = YAML.safe_load(text) || {}
+      raise "#{path}: holon.yaml must be a YAML mapping" unless data.is_a?(Hash)
 
       HolonIdentity.new(
         uuid: data["uuid"].to_s,

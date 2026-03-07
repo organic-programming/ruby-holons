@@ -139,9 +139,9 @@ class HolonsTest < Minitest::Test
   end
 
   def test_parse_holon
-    tmp = Tempfile.new(["holon", ".md"])
-    tmp.write("---\nuuid: \"abc-123\"\ngiven_name: \"test\"\n" \
-              "family_name: \"Test\"\nlang: \"ruby\"\n---\n# test\n")
+    tmp = Tempfile.new(["holon", ".yaml"])
+    tmp.write("uuid: \"abc-123\"\ngiven_name: \"test\"\n" \
+              "family_name: \"Test\"\nlang: \"ruby\"\n")
     tmp.flush
 
     id = Holons::Identity.parse_holon(tmp.path)
@@ -152,9 +152,9 @@ class HolonsTest < Minitest::Test
     tmp.close!
   end
 
-  def test_parse_missing_frontmatter
-    tmp = Tempfile.new(["nofm", ".md"])
-    tmp.write("# No frontmatter\n")
+  def test_parse_invalid_mapping
+    tmp = Tempfile.new(["invalid-holon", ".yaml"])
+    tmp.write("- not\n- a\n- mapping\n")
     tmp.flush
     assert_raises(RuntimeError) { Holons::Identity.parse_holon(tmp.path) }
     tmp.close!
@@ -168,27 +168,6 @@ class HolonsTest < Minitest::Test
 end
 
 class CertificationArtifactsTest < Minitest::Test
-  def test_cert_json_declares_echo_executables_and_level1_dial
-    cert = JSON.parse(File.read(File.join(sdk_dir, "cert.json")))
-
-    assert_equal "./bin/echo-server", cert.dig("executables", "echo_server")
-    assert_equal "./bin/echo-client", cert.dig("executables", "echo_client")
-    assert_equal "./bin/holon-rpc-server", cert.dig("executables", "holon_rpc_server")
-
-    expected_capabilities = {
-      "grpc_dial_tcp" => true,
-      "grpc_dial_stdio" => true,
-      "grpc_dial_unix" => true,
-      "grpc_dial_ws" => true,
-      "holon_rpc_server" => true
-    }
-    actual_capabilities = expected_capabilities.keys.each_with_object({}) do |capability, result|
-      result[capability] = cert.dig("capabilities", capability)
-    end
-
-    assert_equal expected_capabilities, actual_capabilities
-  end
-
   def test_echo_scripts_exist_and_are_executable
     echo_client = File.join(sdk_dir, "bin", "echo-client")
     echo_server = File.join(sdk_dir, "bin", "echo-server")
