@@ -260,7 +260,12 @@ module Holons
         return channel
       end
 
-      advertised_uri, handle = start_tcp_holon(binary_path, options.timeout)
+      advertised_uri, handle =
+        if options.transport == "unix"
+          start_unix_holon(binary_path, entry.slug, port_file, options.timeout)
+        else
+          start_tcp_holon(binary_path, options.timeout)
+        end
       channel = nil
 
       begin
@@ -328,7 +333,7 @@ module Holons
 
       transport = options.transport.to_s.strip.downcase
       transport = DEFAULT_CONNECT_TRANSPORT if transport.empty?
-      raise ArgumentError, "unsupported transport #{options.transport.inspect}" unless %w[stdio tcp].include?(transport)
+      raise ArgumentError, "unsupported transport #{options.transport.inspect}" unless %w[stdio tcp unix].include?(transport)
 
       ConnectOptions.new(
         timeout: timeout,
@@ -492,6 +497,53 @@ module Holons
       end
     end
 
+    def start_unix_holon(binary_path, slug, port_file, timeout)
+      socket_uri = default_unix_socket_uri(slug, port_file)
+      socket_path = socket_uri.delete_prefix("unix://")
+      stderr_read, stderr_write = IO.pipe
+      stderr_read.binmode
+      stderr_write.binmode
+
+      pid = Process.spawn(
+        binary_path,
+        "serve",
+        "--listen",
+        socket_uri,
+        in: File::NULL,
+        out: File::NULL,
+        err: stderr_write
+      )
+      wait_thread = Process.detach(pid)
+      stderr_write.close
+
+      stderr_lines = []
+      reader = Thread.new { read_startup_stream(stderr_read, Queue.new, stderr_lines) }
+      deadline = monotonic_now + timeout
+
+      until monotonic_now > deadline
+        return [socket_uri, ConnectHandle.new(pid: pid, wait_thread: wait_thread, ephemeral: false)] if File.exist?(socket_path)
+
+        unless pid_alive?(pid)
+          details = stderr_lines.join.strip
+          raise "holon exited before binding unix socket#{details.empty? ? "" : ": #{details}"}"
+        end
+
+        sleep(0.02)
+      end
+
+      raise "timed out waiting for unix holon startup#{stderr_lines.empty? ? "" : ": #{stderr_lines.join.strip}"}"
+    rescue StandardError
+      stop_process(pid, wait_thread)
+      raise
+    ensure
+      begin
+        stderr_read.close unless stderr_read.nil? || stderr_read.closed?
+      rescue IOError, SystemCallError
+        nil
+      end
+      reader&.join(0.1)
+    end
+
     def read_startup_stream(io, queue, collector = nil)
       io.each_line do |line|
         collector << line if collector
@@ -543,6 +595,41 @@ module Holons
 
     def default_port_file_path(slug)
       File.join(Dir.pwd, ".op", "run", "#{slug}.port")
+    end
+
+    def default_unix_socket_uri(slug, port_file)
+      label = socket_label(slug)
+      hash = fnv1a64(port_file.to_s)
+      format("unix:///tmp/holons-%<label>s-%<hash>012x.sock", label: label, hash: hash & 0xffffffffffff)
+    end
+
+    def socket_label(slug)
+      label = +""
+      last_dash = false
+
+      slug.to_s.strip.downcase.each_char do |char|
+        if char.match?(/[a-z0-9]/)
+          label << char
+          last_dash = false
+        elsif (char == "-" || char == "_") && !label.empty? && !last_dash
+          label << "-"
+          last_dash = true
+        end
+
+        break if label.length >= 24
+      end
+
+      label = label.gsub(/\A-+|-+\z/, "")
+      label.empty? ? "socket" : label
+    end
+
+    def fnv1a64(text)
+      hash = 0xcbf29ce484222325
+      text.to_s.b.each_byte do |byte|
+        hash ^= byte
+        hash = (hash * 0x100000001b3) & 0xffffffffffffffff
+      end
+      hash
     end
 
     def write_port_file(path, uri)

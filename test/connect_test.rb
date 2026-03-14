@@ -95,6 +95,42 @@ class ConnectTest < Minitest::Test
     end
   end
 
+  def test_connect_writes_unix_port_file_in_persistent_mode
+    Dir.mktmpdir("ruby-holons-connect-") do |root|
+      fixture = create_holon_fixture(root, "Connect", "Unix")
+
+      with_holon_root(root) do
+        channel = Holons.connect(
+          fixture[:slug],
+          transport: "unix",
+          timeout: 5,
+          start: true
+        )
+        pid = wait_for_pid_file(fixture[:pid_file])
+
+        begin
+          out = invoke_ping(channel, "unix-ruby")
+          assert_equal "unix-ruby", out["message"]
+        ensure
+          Holons.disconnect(channel)
+        end
+
+        target = File.read(fixture[:port_file]).strip
+        assert_match(/^unix:\/\/\/tmp\/holons-/, target)
+        assert pid_alive?(pid), "expected persistent process #{pid} to stay alive"
+
+        reused = Holons.connect(fixture[:slug])
+        begin
+          out = invoke_ping(reused, "unix-reuse-ruby")
+          assert_equal "unix-reuse-ruby", out["message"]
+        ensure
+          Holons.disconnect(reused)
+          terminate_process(pid)
+        end
+      end
+    end
+  end
+
   def test_connect_removes_stale_port_file_and_starts_fresh
     Dir.mktmpdir("ruby-holons-connect-") do |root|
       fixture = create_holon_fixture(root, "Connect", "Stale")
