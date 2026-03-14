@@ -78,8 +78,8 @@ module Holons
       @target = "127.0.0.1:#{@listener.local_address.ip_port}"
 
       @accept_thread = Thread.new { accept_loop }
-      @stdout_thread = Thread.new { stdout_loop }
-      @stderr_thread = Thread.new { drain_stderr }
+      @stdout_thread = Thread.new(@child_stdout) { |io| stdout_loop(io) }
+      @stderr_thread = Thread.new(@child_stderr) { |io| drain_stderr(io) }
 
       target
     rescue StandardError
@@ -181,9 +181,11 @@ module Holons
       end
     end
 
-    def stdout_loop
+    def stdout_loop(io)
+      return if io.nil?
+
       loop do
-        chunk = @child_stdout.readpartial(16 * 1024)
+        chunk = io.readpartial(16 * 1024)
         socket = @mutex.synchronize { @socket }
         if socket.nil? || socket.closed?
           @mutex.synchronize { @pending_stdout << chunk.dup }
@@ -215,9 +217,11 @@ module Holons
       end
     end
 
-    def drain_stderr
+    def drain_stderr(io)
+      return if io.nil?
+
       loop do
-        @child_stderr.readpartial(16 * 1024)
+        io.readpartial(16 * 1024)
       end
     rescue EOFError, IOError, SystemCallError
       nil

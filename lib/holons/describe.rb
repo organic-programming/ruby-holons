@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "set"
+require_relative "identity"
 
 module Holons
   module Describe
@@ -184,6 +185,13 @@ module Holons
     end
 
     class << self
+      def register(server, proto_dir:, holon_yaml_path:)
+        raise ArgumentError, "grpc server is required" if server.nil?
+
+        response = proto_response(proto_dir: proto_dir, holon_yaml_path: holon_yaml_path)
+        server.handle(holon_meta_service_class.new(response))
+      end
+
       def build_response(proto_dir:, holon_yaml_path:)
         identity = Identity.parse_holon(holon_yaml_path)
         index = parse_proto_directory(proto_dir)
@@ -204,6 +212,87 @@ module Holons
       end
 
       private
+
+      def proto_response(proto_dir:, holon_yaml_path:)
+        require_grpc_describe_support!
+
+        response = build_response(proto_dir: proto_dir, holon_yaml_path: holon_yaml_path)
+        ::Holonmeta::V1::DescribeResponse.new(
+          slug: response.slug,
+          motto: response.motto,
+          services: response.services.map { |service| proto_service_doc(service) }
+        )
+      end
+
+      def proto_service_doc(service)
+        ::Holonmeta::V1::ServiceDoc.new(
+          name: service.name,
+          description: service.description,
+          methods: service.methods.map { |method| proto_method_doc(method) }
+        )
+      end
+
+      def proto_method_doc(method)
+        ::Holonmeta::V1::MethodDoc.new(
+          name: method.name,
+          description: method.description,
+          input_type: method.input_type,
+          output_type: method.output_type,
+          input_fields: method.input_fields.map { |field| proto_field_doc(field) },
+          output_fields: method.output_fields.map { |field| proto_field_doc(field) },
+          client_streaming: method.client_streaming,
+          server_streaming: method.server_streaming,
+          example_input: method.example_input
+        )
+      end
+
+      def proto_field_doc(field)
+        ::Holonmeta::V1::FieldDoc.new(
+          name: field.name,
+          type: field.type,
+          number: field.number,
+          description: field.description,
+          label: field.label,
+          map_key_type: field.map_key_type,
+          map_value_type: field.map_value_type,
+          nested_fields: field.nested_fields.map { |nested| proto_field_doc(nested) },
+          enum_values: field.enum_values.map { |value| proto_enum_value_doc(value) },
+          required: field.required,
+          example: field.example
+        )
+      end
+
+      def proto_enum_value_doc(value)
+        ::Holonmeta::V1::EnumValueDoc.new(
+          name: value.name,
+          number: value.number,
+          description: value.description
+        )
+      end
+
+      def holon_meta_service_class
+        return @holon_meta_service_class unless @holon_meta_service_class.nil?
+
+        require_grpc_describe_support!
+
+        @holon_meta_service_class = Class.new(::Holonmeta::V1::HolonMeta::Service) do
+          def initialize(response)
+            @response = response
+          end
+
+          def describe(_request, _call)
+            @response
+          end
+        end
+      end
+
+      def require_grpc_describe_support!
+        return unless @grpc_describe_loaded.nil?
+
+        require_relative "../gen/holonmeta/v1/holonmeta_pb"
+        require_relative "../gen/holonmeta/v1/holonmeta_services_pb"
+        @grpc_describe_loaded = true
+      end
 
       def service_doc(service, index)
         ServiceDoc.new(
@@ -498,6 +587,8 @@ module Holons
           .reject(&:empty?)
           .join("-")
           .downcase
+          .tr(" ", "-")
+          .gsub(/\A-+|-+\z/, "")
       end
     end
 
