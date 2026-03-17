@@ -160,6 +160,53 @@ class HolonsTest < Minitest::Test
     tmp.close!
   end
 
+  def test_parse_proto_manifest
+    Dir.mktmpdir("ruby-holons-proto-identity-") do |dir|
+      path = File.join(dir, "holon.proto")
+      File.write(path, <<~PROTO)
+        syntax = "proto3";
+
+        package greeting.v1;
+
+        import "holons/v1/manifest.proto";
+        import "v1/greeting.proto";
+
+        option (holons.v1.manifest) = {
+          identity: {
+            schema: "holon/v1"
+            uuid: "proto-uuid"
+            given_name: "Gabriel"
+            family_name: "Greeting-Ruby"
+            motto: "Reply precisely."
+            composer: "test"
+            status: "draft"
+            born: "2026-03-16"
+          }
+          description: "Proto manifest fixture."
+          lang: "ruby"
+          kind: "native"
+          sequences: [{
+            name: "greet"
+            description: "Exercise brace parsing."
+            params: [{name: "name", description: "Name", required: true}]
+            steps: [
+              "op gabriel-greeting-ruby SayHello '{\"name\":\"{{ .name }}\",\"lang_code\":\"fr\"}'"
+            ]
+          }]
+        };
+      PROTO
+
+      identity = Holons::Identity.parse(path)
+      assert_equal "proto-uuid", identity.uuid
+      assert_equal "Gabriel", identity.given_name
+      assert_equal "Greeting-Ruby", identity.family_name
+      assert_equal "Reply precisely.", identity.motto
+      assert_equal "draft", identity.status
+      assert_equal "2026-03-16", identity.born
+      assert_equal "ruby", identity.lang
+    end
+  end
+
   private
 
   def skip_bind_denied(error)

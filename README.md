@@ -5,7 +5,7 @@ Ruby SDK for Organic Programming.
 It now includes the core daemon-facing lifecycle:
 - transport parsing
 - `serve` flag parsing and gRPC server runner
-- `HolonMeta.Describe` auto-registration from local `protos/` + `holon.yaml`
+- `HolonMeta.Describe` support for YAML and proto-first manifests
 - discovery and slug-based `connect()`
 
 ## Test
@@ -24,9 +24,9 @@ prebuilt `x86_64-darwin` gem under Rosetta.
 |--------|-------------|
 | `Holons::Transport` | `parse_uri(uri)`, `listen(uri)`, `accept(listener)`, `mem_dial(listener)`, `conn_read(conn)`, `conn_write(conn)`, `close_connection(conn)`, `scheme(uri)` |
 | `Holons::Serve` | `parse_flags(args)`, `run(listen_uri, register)`, `run_with_options(listen_uri, register, reflect = true, on_listen: nil)` |
-| `Holons::Identity` | `parse_holon(path)` |
+| `Holons::Identity` | `parse(path)`, `parse_holon(path)` |
 | `Holons::Discover` | `discover(root)`, `discover_local`, `discover_all`, `find_by_slug(slug)`, `find_by_uuid(prefix)` |
-| `Holons::Describe` | `build_response(...)`, `service(...)`, `register(server, proto_dir:, holon_yaml_path:)` |
+| `Holons::Describe` | `build_response(...)`, `service(...)`, `register(server, proto_dir:, manifest_path:)` |
 | `Holons` | `connect(target, opts = nil)`, `disconnect(channel)` |
 | `Holons::HolonRPCClient` | `connect(url)`, `invoke(method, params)`, `register(method, &handler)`, `close` |
 

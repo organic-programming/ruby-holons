@@ -69,6 +69,29 @@ class DiscoverTest < Minitest::Test
     end
   end
 
+  def test_discover_proto_manifest_holon
+    Dir.mktmpdir("holons-ruby-proto-discover-") do |root|
+      write_proto_holon(
+        root,
+        "gabriel-greeting-ruby",
+        uuid: "0d371dd4-2948-4192-8638-cee294fb8320",
+        given_name: "Gabriel",
+        family_name: "Greeting-Ruby",
+        binary: "gabriel-greeting-ruby"
+      )
+
+      entries = Holons.discover(root)
+      assert_equal 1, entries.length
+
+      entry = entries.first
+      assert_equal "gabriel-greeting-ruby", entry.slug
+      assert_equal "gabriel-greeting-ruby", entry.relative_path
+      assert_equal "ruby", entry.manifest.build.runner
+      assert_equal "./cmd/main.rb", entry.manifest.build.main
+      assert_equal "gabriel-greeting-ruby", entry.manifest.artifacts.binary
+    end
+  end
+
   private
 
   def write_holon(root, relative_dir, uuid:, given_name:, family_name:, binary:)
@@ -91,5 +114,41 @@ class DiscoverTest < Minitest::Test
       artifacts:
         binary: #{binary}
     YAML
+  end
+
+  def write_proto_holon(root, relative_dir, uuid:, given_name:, family_name:, binary:)
+    dir = File.join(root, relative_dir, "api", "v1")
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, "holon.proto"), <<~PROTO)
+      syntax = "proto3";
+
+      package greeting.v1;
+
+      import "holons/v1/manifest.proto";
+      import "v1/greeting.proto";
+
+      option (holons.v1.manifest) = {
+        identity: {
+          schema: "holon/v1"
+          uuid: "#{uuid}"
+          given_name: "#{given_name}"
+          family_name: "#{family_name}"
+          motto: "Greets users."
+          composer: "test"
+          status: "draft"
+          born: "2026-03-16"
+        }
+        description: "Proto discover fixture."
+        lang: "ruby"
+        kind: "native"
+        build: {
+          runner: "ruby"
+          main: "./cmd/main.rb"
+        }
+        artifacts: {
+          binary: "#{binary}"
+        }
+      };
+    PROTO
   end
 end

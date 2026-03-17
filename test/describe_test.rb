@@ -68,6 +68,54 @@ class DescribeTest < Minitest::Test
     end
   end
 
+  def test_build_response_from_proto_manifest
+    Dir.mktmpdir("ruby-holons-describe-proto-") do |dir|
+      manifest_dir = File.join(dir, "api", "v1")
+      FileUtils.mkdir_p(manifest_dir)
+      manifest_path = File.join(manifest_dir, "holon.proto")
+      File.write(manifest_path, <<~PROTO)
+        syntax = "proto3";
+
+        package echo.v1;
+
+        import "holons/v1/manifest.proto";
+        import "echo/v1/echo.proto";
+
+        option (holons.v1.manifest) = {
+          identity: {
+            schema: "holon/v1"
+            uuid: "echo-proto"
+            given_name: "Echo"
+            family_name: "Server"
+            motto: "Reply precisely."
+            composer: "describe-test"
+            status: "draft"
+            born: "2026-03-16"
+          }
+          description: "Proto manifest fixture."
+          lang: "ruby"
+          kind: "native"
+          build: {
+            runner: "ruby"
+            main: "./cmd/main.rb"
+          }
+          artifacts: {
+            binary: "echo-server"
+          }
+        };
+      PROTO
+
+      response = Holons::Describe.build_response(
+        proto_dir: File.join(echo_holon_dir, "protos"),
+        manifest_path: manifest_path
+      )
+
+      assert_equal "echo-server", response.slug
+      assert_equal "Reply precisely.", response.motto
+      assert_equal ["echo.v1.Echo"], response.services.map(&:name)
+    end
+  end
+
   private
 
   def echo_holon_dir

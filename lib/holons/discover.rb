@@ -102,16 +102,16 @@ module Holons
           scan_dir(root, child, origin, entries_by_key, ordered_keys)
           next
         end
-        next unless File.file?(child) && name == "holon.yaml"
+        next unless manifest_file?(root, child, name)
 
         begin
-          identity = Identity.parse_holon(child)
+          identity = Identity.parse(child)
           manifest = parse_manifest(child)
         rescue StandardError
           next
         end
 
-        holon_dir = File.expand_path(File.dirname(child))
+        holon_dir = manifest_root(child)
         entry = HolonEntry.new(
           slug: slug_for(identity),
           uuid: identity.uuid.to_s,
@@ -138,6 +138,8 @@ module Holons
     end
 
     def parse_manifest(path)
+      return parse_proto_manifest(path) if File.basename(path) == "holon.proto"
+
       data = YAML.safe_load(File.read(path)) || {}
       raise "#{path}: holon.yaml must be a YAML mapping" unless data.is_a?(Hash)
 
@@ -156,6 +158,25 @@ module Holons
       )
     end
 
+    def parse_proto_manifest(path)
+      text = File.read(path)
+      manifest_block = Identity.extract_braced_block(text, "option (holons.v1.manifest)")
+      build_block = Identity.extract_named_block(manifest_block, "build")
+      artifacts_block = Identity.extract_named_block(manifest_block, "artifacts")
+
+      HolonManifest.new(
+        kind: Identity.extract_string(manifest_block, "kind"),
+        build: HolonBuild.new(
+          runner: Identity.extract_string(build_block, "runner"),
+          main: Identity.extract_string(build_block, "main")
+        ),
+        artifacts: HolonArtifacts.new(
+          binary: Identity.extract_string(artifacts_block, "binary"),
+          primary: Identity.extract_string(artifacts_block, "primary")
+        )
+      )
+    end
+
     def slug_for(identity)
       given = identity.given_name.to_s.strip
       family = identity.family_name.to_s.strip.sub(/\?\z/, "")
@@ -168,6 +189,21 @@ module Holons
       return false if File.expand_path(dir) == File.expand_path(root)
 
       %w[.git .op node_modules vendor build].include?(name) || name.start_with?(".")
+    end
+
+    def manifest_file?(root, path, name)
+      return false unless File.file?(path)
+      return true if name == "holon.yaml"
+      return false unless name == "holon.proto"
+
+      relative = relative_path(root, path)
+      relative == "api/v1/holon.proto" || relative.end_with?("/api/v1/holon.proto")
+    end
+
+    def manifest_root(path)
+      return File.expand_path(File.dirname(path)) unless File.basename(path) == "holon.proto"
+
+      File.expand_path(File.join(File.dirname(path), "..", ".."))
     end
 
     def relative_path(root, dir)
