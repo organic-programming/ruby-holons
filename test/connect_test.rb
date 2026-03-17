@@ -237,18 +237,28 @@ class ConnectTest < Minitest::Test
     File.write(binary_path, wrapper_script(pid_file))
     File.chmod(0o755, binary_path)
 
-    File.write(File.join(holon_dir, "holon.yaml"), <<~YAML)
-      uuid: "#{slug}-uuid"
-      given_name: "#{given_name}"
-      family_name: "#{family_name}"
-      composer: "connect-test"
-      kind: service
-      build:
-        runner: ruby
-        main: bin/echo-server
-      artifacts:
-        binary: "echo-wrapper"
-    YAML
+    File.write(File.join(holon_dir, "holon.proto"), <<~PROTO)
+      syntax = "proto3";
+
+      package holonmeta.test.v1;
+
+      option (holons.v1.manifest) = {
+        identity: {
+          uuid: "#{slug}-uuid"
+          given_name: "#{given_name}"
+          family_name: "#{family_name}"
+          composer: "connect-test"
+        }
+        kind: "service"
+        build: {
+          runner: "ruby"
+          main: "bin/echo-server"
+        }
+        artifacts: {
+          binary: "echo-wrapper"
+        }
+      };
+    PROTO
 
     {
       slug: slug,

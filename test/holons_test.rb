@@ -139,9 +139,16 @@ class HolonsTest < Minitest::Test
   end
 
   def test_parse_holon
-    tmp = Tempfile.new(["holon", ".yaml"])
-    tmp.write("uuid: \"abc-123\"\ngiven_name: \"test\"\n" \
-              "family_name: \"Test\"\nlang: \"ruby\"\n")
+    tmp = Tempfile.new(["holon", ".proto"])
+    tmp.write("syntax = \"proto3\";\n\npackage test.v1;\n\n" \
+              "option (holons.v1.manifest) = {\n" \
+              "  identity: {\n" \
+              "    uuid: \"abc-123\"\n" \
+              "    given_name: \"test\"\n" \
+              "    family_name: \"Test\"\n" \
+              "  }\n" \
+              "  lang: \"ruby\"\n" \
+              "};\n")
     tmp.flush
 
     id = Holons::Identity.parse_holon(tmp.path)
@@ -153,8 +160,8 @@ class HolonsTest < Minitest::Test
   end
 
   def test_parse_invalid_mapping
-    tmp = Tempfile.new(["invalid-holon", ".yaml"])
-    tmp.write("- not\n- a\n- mapping\n")
+    tmp = Tempfile.new(["invalid-holon", ".proto"])
+    tmp.write("syntax = \"proto3\";\n\npackage test.v1;\n")
     tmp.flush
     assert_raises(RuntimeError) { Holons::Identity.parse_holon(tmp.path) }
     tmp.close!

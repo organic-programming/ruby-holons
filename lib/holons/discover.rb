@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "pathname"
-require "yaml"
 
 module Holons
   HolonBuild = Struct.new(:runner, :main, keyword_init: true)
@@ -105,21 +104,30 @@ module Holons
         next unless manifest_file?(root, child, name)
 
         begin
-          identity = Identity.parse(child)
-          manifest = parse_manifest(child)
+          resolved = Identity.parse_manifest(child)
         rescue StandardError
           next
         end
 
         holon_dir = manifest_root(child)
         entry = HolonEntry.new(
-          slug: slug_for(identity),
-          uuid: identity.uuid.to_s,
+          slug: slug_for(resolved.identity),
+          uuid: resolved.identity.uuid.to_s,
           dir: holon_dir,
           relative_path: relative_path(root, holon_dir),
           origin: origin,
-          identity: identity,
-          manifest: manifest
+          identity: resolved.identity,
+          manifest: HolonManifest.new(
+            kind: resolved.kind.to_s,
+            build: HolonBuild.new(
+              runner: resolved.build_runner.to_s,
+              main: resolved.build_main.to_s
+            ),
+            artifacts: HolonArtifacts.new(
+              binary: resolved.artifact_binary.to_s,
+              primary: resolved.artifact_primary.to_s
+            )
+          )
         )
 
         key = entry.uuid.to_s.strip
@@ -135,46 +143,6 @@ module Holons
       end
     rescue Errno::ENOENT, Errno::EACCES
       nil
-    end
-
-    def parse_manifest(path)
-      return parse_proto_manifest(path) if File.basename(path) == "holon.proto"
-
-      data = YAML.safe_load(File.read(path)) || {}
-      raise "#{path}: holon.yaml must be a YAML mapping" unless data.is_a?(Hash)
-
-      build = data["build"].is_a?(Hash) ? data["build"] : {}
-      artifacts = data["artifacts"].is_a?(Hash) ? data["artifacts"] : {}
-      HolonManifest.new(
-        kind: data["kind"].to_s,
-        build: HolonBuild.new(
-          runner: build["runner"].to_s,
-          main: build["main"].to_s
-        ),
-        artifacts: HolonArtifacts.new(
-          binary: artifacts["binary"].to_s,
-          primary: artifacts["primary"].to_s
-        )
-      )
-    end
-
-    def parse_proto_manifest(path)
-      text = File.read(path)
-      manifest_block = Identity.extract_braced_block(text, "option (holons.v1.manifest)")
-      build_block = Identity.extract_named_block(manifest_block, "build")
-      artifacts_block = Identity.extract_named_block(manifest_block, "artifacts")
-
-      HolonManifest.new(
-        kind: Identity.extract_string(manifest_block, "kind"),
-        build: HolonBuild.new(
-          runner: Identity.extract_string(build_block, "runner"),
-          main: Identity.extract_string(build_block, "main")
-        ),
-        artifacts: HolonArtifacts.new(
-          binary: Identity.extract_string(artifacts_block, "binary"),
-          primary: Identity.extract_string(artifacts_block, "primary")
-        )
-      )
     end
 
     def slug_for(identity)
@@ -193,17 +161,17 @@ module Holons
 
     def manifest_file?(root, path, name)
       return false unless File.file?(path)
-      return true if name == "holon.yaml"
-      return false unless name == "holon.proto"
-
-      relative = relative_path(root, path)
-      relative == "api/v1/holon.proto" || relative.end_with?("/api/v1/holon.proto")
+      name == "holon.proto"
     end
 
     def manifest_root(path)
-      return File.expand_path(File.dirname(path)) unless File.basename(path) == "holon.proto"
-
-      File.expand_path(File.join(File.dirname(path), "..", ".."))
+      manifest_dir = File.expand_path(File.dirname(path))
+      version_dir = File.basename(manifest_dir)
+      api_dir = File.basename(File.dirname(manifest_dir))
+      if version_dir.match?(/^v[0-9]+[A-Za-z0-9._-]*$/) && api_dir == "api"
+        return File.expand_path(File.join(manifest_dir, "..", ".."))
+      end
+      manifest_dir
     end
 
     def relative_path(root, dir)

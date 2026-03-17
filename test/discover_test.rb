@@ -97,23 +97,34 @@ class DiscoverTest < Minitest::Test
   def write_holon(root, relative_dir, uuid:, given_name:, family_name:, binary:)
     dir = File.join(root, relative_dir)
     FileUtils.mkdir_p(dir)
-    File.write(File.join(dir, "holon.yaml"), <<~YAML)
-      schema: holon/v0
-      uuid: "#{uuid}"
-      given_name: "#{given_name}"
-      family_name: "#{family_name}"
-      motto: "Test"
-      composer: "test"
-      clade: deterministic/pure
-      status: draft
-      born: "2026-03-07"
-      generated_by: test
-      kind: native
-      build:
-        runner: go-module
-      artifacts:
-        binary: #{binary}
-    YAML
+    File.write(File.join(dir, "holon.proto"), <<~PROTO)
+      syntax = "proto3";
+
+      package test.v1;
+
+      option (holons.v1.manifest) = {
+        identity: {
+          uuid: "#{uuid}"
+          given_name: "#{given_name}"
+          family_name: "#{family_name}"
+          motto: "Test"
+          composer: "test"
+          clade: "deterministic/pure"
+          status: "draft"
+          born: "2026-03-07"
+        }
+        lineage: {
+          generated_by: "test"
+        }
+        kind: "native"
+        build: {
+          runner: "go-module"
+        }
+        artifacts: {
+          binary: "#{binary}"
+        }
+      };
+    PROTO
   end
 
   def write_proto_holon(root, relative_dir, uuid:, given_name:, family_name:, binary:)

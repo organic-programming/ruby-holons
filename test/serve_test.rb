@@ -101,7 +101,7 @@ class ServeTest < Minitest::Test
       File.chmod(0o755, script_path)
       File.chmod(0o755, wrapper_path)
 
-      File.write(File.join(holon_dir, "holon.yaml"), holon_manifest(wrapper_path))
+      File.write(File.join(holon_dir, "holon.proto"), holon_manifest(wrapper_path))
 
       yield(
         workspace: workspace,
@@ -147,19 +147,31 @@ class ServeTest < Minitest::Test
   end
 
   def holon_manifest(binary_path)
-    <<~YAML
-      uuid: "serve-helper-uuid"
-      given_name: "Serve"
-      family_name: "Helper"
-      motto: "Reply precisely."
-      composer: "serve-test"
-      kind: service
-      build:
-        runner: ruby
-        main: serve_helper.rb
-      artifacts:
-        binary: "#{binary_path}"
-    YAML
+    <<~PROTO
+      syntax = "proto3";
+
+      package holonmeta.test.v1;
+
+      option (holons.v1.manifest) = {
+        identity: {
+          uuid: "serve-helper-uuid"
+          given_name: "Serve"
+          family_name: "Helper"
+          motto: "Reply precisely."
+          composer: "serve-test"
+          status: "draft"
+          born: "2026-03-17"
+        }
+        kind: "service"
+        build: {
+          runner: "ruby"
+          main: "serve_helper.rb"
+        }
+        artifacts: {
+          binary: "#{binary_path}"
+        }
+      };
+    PROTO
   end
 
   def proto_fixture_dir

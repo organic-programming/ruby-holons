@@ -1,60 +1,103 @@
 # frozen_string_literal: true
 
-require "yaml"
-
 module Holons
-  # Parsed identity from a holon.yaml file.
+  # Parsed identity from a holon.proto manifest file.
   HolonIdentity = Struct.new(
     :uuid, :given_name, :family_name, :motto, :composer,
-    :clade, :status, :born, :lang,
+    :clade, :status, :born, :lang, :parents, :reproduction, :generated_by,
+    :proto_status, :aliases,
+    keyword_init: true
+  )
+  ResolvedManifest = Struct.new(
+    :identity, :kind, :build_runner, :build_main, :artifact_binary, :artifact_primary,
     keyword_init: true
   )
 
   module Identity
     def self.parse(path)
-      case File.basename(path.to_s)
-      when "holon.proto"
-        parse_proto_manifest(path)
-      else
-        parse_holon(path)
-      end
+      parse_holon(path)
     end
 
-    # Parse a holon.yaml file.
+    # Parse a holon.proto manifest file.
     def self.parse_holon(path)
-      text = File.read(path)
-      data = YAML.safe_load(text) || {}
-      raise "#{path}: holon.yaml must be a YAML mapping" unless data.is_a?(Hash)
+      parse_manifest(path).identity
+    end
 
-      HolonIdentity.new(
-        uuid: data["uuid"].to_s,
-        given_name: data["given_name"].to_s,
-        family_name: data["family_name"].to_s,
-        motto: data["motto"].to_s,
-        composer: data["composer"].to_s,
-        clade: data["clade"].to_s,
-        status: data["status"].to_s,
-        born: data["born"].to_s,
-        lang: data["lang"].to_s
+    def self.parse_manifest(path)
+      text = File.read(path)
+      manifest_block = extract_manifest_block(text)
+      raise "#{path}: missing holons.v1.manifest option in holon.proto" if manifest_block.to_s.empty?
+
+      identity_block = extract_named_block(manifest_block, "identity")
+      lineage_block = extract_named_block(manifest_block, "lineage")
+      build_block = extract_named_block(manifest_block, "build")
+      artifacts_block = extract_named_block(manifest_block, "artifacts")
+
+      ResolvedManifest.new(
+        identity: HolonIdentity.new(
+          uuid: extract_string(identity_block, "uuid"),
+          given_name: extract_string(identity_block, "given_name"),
+          family_name: extract_string(identity_block, "family_name"),
+          motto: extract_string(identity_block, "motto"),
+          composer: extract_string(identity_block, "composer"),
+          clade: extract_string(identity_block, "clade"),
+          status: extract_string(identity_block, "status"),
+          born: extract_string(identity_block, "born"),
+          lang: extract_string(manifest_block, "lang"),
+          parents: extract_list(lineage_block, "parents"),
+          reproduction: extract_string(lineage_block, "reproduction"),
+          generated_by: extract_string(lineage_block, "generated_by"),
+          proto_status: extract_string(identity_block, "proto_status"),
+          aliases: extract_list(identity_block, "aliases")
+        ),
+        kind: extract_string(manifest_block, "kind"),
+        build_runner: extract_string(build_block, "runner"),
+        build_main: extract_string(build_block, "main"),
+        artifact_binary: extract_string(artifacts_block, "binary"),
+        artifact_primary: extract_string(artifacts_block, "primary")
       )
     end
 
-    def self.parse_proto_manifest(path)
-      text = File.read(path)
-      manifest_block = extract_braced_block(text, "option (holons.v1.manifest)")
-      identity_block = extract_named_block(manifest_block, "identity")
+    def self.find_holon_proto(root)
+      expanded = File.expand_path(root.to_s)
+      return expanded if File.file?(expanded) && File.basename(expanded) == "holon.proto"
+      return nil unless File.directory?(expanded)
 
-      HolonIdentity.new(
-        uuid: extract_string(identity_block, "uuid"),
-        given_name: extract_string(identity_block, "given_name"),
-        family_name: extract_string(identity_block, "family_name"),
-        motto: extract_string(identity_block, "motto"),
-        composer: extract_string(identity_block, "composer"),
-        clade: "",
-        status: extract_string(identity_block, "status"),
-        born: extract_string(identity_block, "born"),
-        lang: extract_string(manifest_block, "lang")
-      )
+      direct = File.join(expanded, "holon.proto")
+      return direct if File.file?(direct)
+
+      api_v1 = File.join(expanded, "api", "v1", "holon.proto")
+      return api_v1 if File.file?(api_v1)
+
+      Dir.glob(File.join(expanded, "**", "holon.proto")).sort.first
+    end
+
+    def self.resolve_manifest_path(root)
+      expanded = File.expand_path(root.to_s)
+      search_roots = [expanded]
+      parent = File.dirname(expanded)
+      if File.basename(expanded) == "protos"
+        search_roots << parent
+      elsif !search_roots.include?(parent)
+        search_roots << parent
+      end
+
+      search_roots.each do |candidate_root|
+        candidate = find_holon_proto(candidate_root)
+        return candidate unless candidate.nil?
+      end
+
+      raise "no holon.proto found near #{expanded}"
+    end
+
+    def self.extract_manifest_block(text)
+      match = text.match(/option\s*\(\s*holons\.v1\.manifest\s*\)\s*=\s*\{/m)
+      return "" if match.nil?
+
+      brace_index = text.index("{", match.begin(0))
+      return "" if brace_index.nil?
+
+      extract_braced_block(text, "{", brace_index)
     end
 
     def self.extract_named_block(text, field_name)
@@ -69,6 +112,16 @@ module Holons
       return "" if match.nil?
 
       match[1].to_s
+    end
+
+    def self.extract_list(text, field_name)
+      match = text.match(/^\s*#{Regexp.escape(field_name)}\s*:\s*\[(.*?)\]/m)
+      return [] if match.nil?
+
+      match[1].scan(/"((?:[^"\\]|\\.)*)"|([^\s,\]]+)/).map do |quoted, bare|
+        value = quoted.to_s.empty? ? bare.to_s : quoted.to_s
+        value.gsub("\\\"", "\"").gsub("\\\\", "\\")
+      end
     end
 
     def self.extract_braced_block(text, needle, offset = nil)

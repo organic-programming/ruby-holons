@@ -174,11 +174,9 @@ module Holons
     end
 
     class Provider
-      def initialize(proto_dir:, manifest_path: nil, holon_yaml_path: nil)
+      def initialize(proto_dir:, manifest_path: nil)
         @proto_dir = proto_dir
-        @manifest_path = Describe.send(
-          :resolve_manifest_path, manifest_path, holon_yaml_path
-        )
+        @manifest_path = Describe.send(:resolve_manifest_path, proto_dir, manifest_path)
       end
 
       def describe(_request = DescribeRequest.new)
@@ -190,10 +188,10 @@ module Holons
     end
 
     class << self
-      def register(server, proto_dir:, manifest_path: nil, holon_yaml_path: nil)
+      def register(server, proto_dir:, manifest_path: nil)
         raise ArgumentError, "grpc server is required" if server.nil?
 
-        resolved_manifest_path = resolve_manifest_path(manifest_path, holon_yaml_path)
+        resolved_manifest_path = resolve_manifest_path(proto_dir, manifest_path)
         response = proto_response(
           proto_dir: proto_dir,
           manifest_path: resolved_manifest_path
@@ -201,8 +199,8 @@ module Holons
         server.handle(holon_meta_service_class.new(response))
       end
 
-      def build_response(proto_dir:, manifest_path: nil, holon_yaml_path: nil)
-        resolved_manifest_path = resolve_manifest_path(manifest_path, holon_yaml_path)
+      def build_response(proto_dir:, manifest_path: nil)
+        resolved_manifest_path = resolve_manifest_path(proto_dir, manifest_path)
         identity = Identity.parse(resolved_manifest_path)
         index = parse_proto_directory(proto_dir)
 
@@ -217,11 +215,10 @@ module Holons
         )
       end
 
-      def service(proto_dir:, manifest_path: nil, holon_yaml_path: nil)
+      def service(proto_dir:, manifest_path: nil)
         Provider.new(
           proto_dir: proto_dir,
-          manifest_path: manifest_path,
-          holon_yaml_path: holon_yaml_path
+          manifest_path: manifest_path
         )
       end
 
@@ -241,12 +238,11 @@ module Holons
         )
       end
 
-      def resolve_manifest_path(manifest_path, holon_yaml_path)
+      def resolve_manifest_path(proto_dir, manifest_path)
         candidate = manifest_path
-        candidate = holon_yaml_path if candidate.to_s.strip.empty?
-        raise ArgumentError, "manifest path is required" if candidate.to_s.strip.empty?
+        return candidate unless candidate.to_s.strip.empty?
 
-        candidate
+        Identity.resolve_manifest_path(proto_dir)
       end
 
       def proto_service_doc(service)
