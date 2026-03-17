@@ -67,6 +67,9 @@ module Holons
         return unless File.exist?(holon_yaml_path)
 
         Describe.register(server, proto_dir: "./protos", holon_yaml_path: holon_yaml_path)
+      rescue RuntimeError => e
+        # Skip if Describe was already registered by the holon's own register_services.
+        raise unless e.message.include?("already registered")
       end
 
       def prepare_runtime(parsed, server)
