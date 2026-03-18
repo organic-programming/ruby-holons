@@ -33,7 +33,7 @@ prebuilt `x86_64-darwin` gem under Rosetta.
 ## Current scope
 
 - gRPC server transports: `tcp://`, `unix://`, `stdio://`
-- runtime transport helpers: `tcp://`, `unix://`, `stdio://`, `mem://`
+- runtime transport helpers: `tcp://`, `unix://`, `stdio://`
 - discovery scans local, `$OPBIN`, and cache roots
 
 ## Remaining gap vs Go
