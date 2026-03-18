@@ -64,14 +64,15 @@ module Holons
 
       def auto_register_holonmeta(server)
         Describe.register(server, proto_dir: "./protos")
-      rescue RuntimeError => e
-        # Skip if Describe was already registered by the holon's own register_services.
-        raise unless e.message.include?("already registered")
       rescue StandardError => e
+        # Skip if Describe was already registered by the holon's own register_services,
+        # or if no proto manifest is reachable from the current working directory.
+        return if e.message.include?("already registered")
         return if e.message.include?("no holon.proto found near ")
 
         raise
       end
+
 
       def prepare_runtime(parsed, server)
         case parsed.scheme
