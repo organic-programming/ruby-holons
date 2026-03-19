@@ -12,22 +12,32 @@ module Holons
   module Serve
     SIGNALS = %w[INT TERM].freeze
     DEFAULT_SIGNAL_WAIT_INTERVAL = 0.25
+    ParsedFlags = Struct.new(:listen_uri, :reflect, keyword_init: true)
 
     class << self
       # Parse --listen or --port from args.
       def parse_flags(args)
+        parse_options(args).listen_uri
+      end
+
+      def parse_options(args)
+        listen_uri = Transport::DEFAULT_URI
+        reflect = false
+
         args.each_with_index do |arg, i|
-          return args[i + 1] if arg == "--listen" && i + 1 < args.length
-          return "tcp://:#{args[i + 1]}" if arg == "--port" && i + 1 < args.length
+          listen_uri = args[i + 1] if arg == "--listen" && i + 1 < args.length
+          listen_uri = "tcp://:#{args[i + 1]}" if arg == "--port" && i + 1 < args.length
+          reflect = true if arg == "--reflect"
         end
-        Transport::DEFAULT_URI
+
+        ParsedFlags.new(listen_uri: listen_uri, reflect: reflect)
       end
 
       def run(listen_uri, register)
-        run_with_options(listen_uri, register, true)
+        run_with_options(listen_uri, register, false)
       end
 
-      def run_with_options(listen_uri, register, reflect = true, on_listen: nil)
+      def run_with_options(listen_uri, register, reflect = false, on_listen: nil)
         ensure_grpc_runtime!
         raise ArgumentError, "register callback is required" unless register.respond_to?(:call)
 
@@ -35,9 +45,10 @@ module Holons
         server = GRPC::RpcServer.new
         register.call(server)
         auto_register_holonmeta(server)
+        reflection_enabled = maybe_register_reflection(server, reflect)
 
         actual_uri, cleanup, stdio_bridge = prepare_runtime(parsed, server)
-        mode = reflection_mode(reflect)
+        mode = reflection_mode(reflection_enabled)
 
         begin
           with_signal_handlers(server) do
@@ -129,12 +140,16 @@ module Holons
       def reflection_mode(reflect)
         return "reflection OFF" unless reflect
 
-        begin
-          require "grpc/reflection"
-          "reflection ON"
-        rescue LoadError
-          "reflection unavailable"
-        end
+        "reflection ON"
+      end
+
+      def maybe_register_reflection(server, reflect)
+        return false unless reflect
+
+        require_relative "../grpc_reflection"
+        server.handle(GrpcReflection::Server)
+        server.handle(GrpcReflection::ServerAlpha)
+        true
       end
 
       def publish_listen_uri(actual_uri, on_listen)

@@ -23,7 +23,7 @@ prebuilt `x86_64-darwin` gem under Rosetta.
 | Module | Description |
 |--------|-------------|
 | `Holons::Transport` | `parse_uri(uri)`, `listen(uri)`, `accept(listener)`, `mem_dial(listener)`, `conn_read(conn)`, `conn_write(conn)`, `close_connection(conn)`, `scheme(uri)` |
-| `Holons::Serve` | `parse_flags(args)`, `run(listen_uri, register)`, `run_with_options(listen_uri, register, reflect = true, on_listen: nil)` |
+| `Holons::Serve` | `parse_flags(args)`, `parse_options(args)`, `run(listen_uri, register)`, `run_with_options(listen_uri, register, reflect = false, on_listen: nil)` |
 | `Holons::Identity` | `parse(path)`, `parse_holon(path)` for `holon.proto` |
 | `Holons::Discover` | `discover(root)`, `discover_local`, `discover_all`, `find_by_slug(slug)`, `find_by_uuid(prefix)` |
 | `Holons::Describe` | `build_response(...)`, `service(...)`, `register(server, proto_dir:, manifest_path:)` |
@@ -38,7 +38,4 @@ prebuilt `x86_64-darwin` gem under Rosetta.
 
 ## Remaining gap vs Go
 
-- No Ruby server reflection support is wired today, so `reflect = true`
-  currently degrades to metadata-only serving rather than full gRPC
-  reflection.
 - No Holon-RPC server module yet.

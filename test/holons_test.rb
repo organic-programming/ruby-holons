@@ -138,6 +138,12 @@ class HolonsTest < Minitest::Test
       Holons::Serve.parse_flags([])
   end
 
+  def test_parse_options_reflect
+    parsed = Holons::Serve.parse_options(["--listen", "tcp://:8080", "--reflect"])
+    assert_equal "tcp://:8080", parsed.listen_uri
+    assert_equal true, parsed.reflect
+  end
+
   def test_parse_holon
     tmp = Tempfile.new(["holon", ".proto"])
     tmp.write("syntax = \"proto3\";\n\npackage test.v1;\n\n" \

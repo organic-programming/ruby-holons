@@ -126,8 +126,8 @@ class ServeTest < Minitest::Test
       args = ARGV.dup
       args.shift if args.first == "serve"
 
-      listen_uri = Holons::Serve.parse_flags(args)
-      Holons::Serve.run_with_options(listen_uri, ->(_server) {}, true)
+      parsed = Holons::Serve.parse_options(args)
+      Holons::Serve.run_with_options(parsed.listen_uri, ->(_server) {}, parsed.reflect)
     RUBY
   end
 
