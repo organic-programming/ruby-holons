@@ -44,7 +44,7 @@ module Holons
         parsed = Transport.parse_uri(listen_uri)
         server = GRPC::RpcServer.new
         register.call(server)
-        auto_register_holonmeta(server)
+        auto_register_describe(server)
         reflection_enabled = maybe_register_reflection(server, reflect)
 
         actual_uri, cleanup, stdio_bridge = prepare_runtime(parsed, server)
@@ -73,7 +73,7 @@ module Holons
         raise e
       end
 
-      def auto_register_holonmeta(server)
+      def auto_register_describe(server)
         Describe.register(server, proto_dir: "./protos")
       rescue StandardError => e
         # Skip if Describe was already registered by the holon's own register_services,

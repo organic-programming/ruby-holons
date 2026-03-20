@@ -240,7 +240,7 @@ class ConnectTest < Minitest::Test
     File.write(File.join(holon_dir, "holon.proto"), <<~PROTO)
       syntax = "proto3";
 
-      package holonmeta.test.v1;
+      package holons.test.v1;
 
       option (holons.v1.manifest) = {
         identity: {

@@ -10,9 +10,11 @@ class DescribeTest < Minitest::Test
       response = Holons::Describe.build_response(
         proto_dir: File.join(root, "protos")
       )
+      identity = response.manifest.identity
 
-      assert_equal "echo-server", response.slug
-      assert_equal "Reply precisely.", response.motto
+      assert_equal "Echo", identity.given_name
+      assert_equal "Server", identity.family_name
+      assert_equal "Reply precisely.", identity.motto
       assert_equal 1, response.services.length
 
       service = response.services.first
@@ -45,7 +47,7 @@ class DescribeTest < Minitest::Test
       )
 
       response = provider.describe(Holons::Describe::DescribeRequest.new)
-      assert_equal "echo-server", response.slug
+      assert_equal "Echo", response.manifest.identity.given_name
       assert_equal ["echo.v1.Echo"], response.services.map(&:name)
     end
   end
@@ -55,7 +57,7 @@ class DescribeTest < Minitest::Test
       File.write(File.join(dir, "holon.proto"), <<~PROTO)
         syntax = "proto3";
 
-        package holonmeta.test.v1;
+        package holons.test.v1;
 
         option (holons.v1.manifest) = {
           identity: {
@@ -74,9 +76,11 @@ class DescribeTest < Minitest::Test
       response = Holons::Describe.build_response(
         proto_dir: File.join(dir, "protos")
       )
+      identity = response.manifest.identity
 
-      assert_equal "empty-holon", response.slug
-      assert_equal "Still available.", response.motto
+      assert_equal "Empty", identity.given_name
+      assert_equal "Holon", identity.family_name
+      assert_equal "Still available.", identity.motto
       assert_empty response.services
     end
   end
@@ -123,8 +127,8 @@ class DescribeTest < Minitest::Test
         manifest_path: manifest_path
       )
 
-      assert_equal "echo-server", response.slug
-      assert_equal "Reply precisely.", response.motto
+      assert_equal "Echo", response.manifest.identity.given_name
+      assert_equal "Reply precisely.", response.manifest.identity.motto
       assert_equal ["echo.v1.Echo"], response.services.map(&:name)
     end
   end
@@ -141,7 +145,7 @@ class DescribeTest < Minitest::Test
       File.write(File.join(dir, "holon.proto"), <<~PROTO)
         syntax = "proto3";
 
-        package holonmeta.test.v1;
+        package holons.test.v1;
 
         option (holons.v1.manifest) = {
           identity: {

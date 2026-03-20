@@ -5,7 +5,7 @@ require_relative "identity"
 
 module Holons
   module Describe
-    HOLON_META_SERVICE = "holonmeta.v1.HolonMeta"
+    HOLON_META_SERVICE = "holons.v1.HolonMeta"
     SCALAR_TYPES = %w[
       double float int64 uint64 int32 fixed64 fixed32 bool string bytes
       uint32 sfixed32 sfixed64 sint32 sint64
@@ -156,18 +156,16 @@ module Holons
     end
 
     class DescribeResponse
-      attr_reader :slug, :motto, :services
+      attr_reader :manifest, :services
 
-      def initialize(slug:, motto:, services:)
-        @slug = slug
-        @motto = motto
+      def initialize(manifest:, services:)
+        @manifest = manifest
         @services = services
       end
 
       def to_h
         {
-          slug: slug,
-          motto: motto,
+          manifest: Describe.manifest_to_h(manifest),
           services: services.map(&:to_h)
         }
       end
@@ -201,12 +199,11 @@ module Holons
 
       def build_response(proto_dir:, manifest_path: nil)
         resolved_manifest_path = resolve_manifest_path(proto_dir, manifest_path)
-        identity = Identity.parse(resolved_manifest_path)
+        manifest = Identity.parse_manifest(resolved_manifest_path)
         index = parse_proto_directory(proto_dir)
 
         DescribeResponse.new(
-          slug: slug_for(identity),
-          motto: identity.motto.to_s,
+          manifest: manifest,
           services: index.services.each_with_object([]) do |service, docs|
             next if service.full_name == HOLON_META_SERVICE
 
@@ -231,10 +228,63 @@ module Holons
           proto_dir: proto_dir,
           manifest_path: manifest_path
         )
-        ::Holonmeta::V1::DescribeResponse.new(
-          slug: response.slug,
-          motto: response.motto,
+        ::Holons::V1::DescribeResponse.new(
+          manifest: proto_manifest(response.manifest),
           services: response.services.map { |service| proto_service_doc(service) }
+        )
+      end
+
+      def manifest_to_h(manifest)
+        return {} if manifest.nil?
+
+        {
+          identity: manifest.identity.nil? ? {} : {
+            uuid: manifest.identity.uuid,
+            given_name: manifest.identity.given_name,
+            family_name: manifest.identity.family_name,
+            motto: manifest.identity.motto,
+            composer: manifest.identity.composer,
+            status: manifest.identity.status,
+            born: manifest.identity.born,
+            aliases: manifest.identity.aliases
+          },
+          kind: manifest.kind,
+          lang: manifest.identity.lang,
+          build: {
+            runner: manifest.build_runner,
+            main: manifest.build_main
+          },
+          artifacts: {
+            binary: manifest.artifact_binary,
+            primary: manifest.artifact_primary
+          }
+        }
+      end
+
+      def proto_manifest(manifest)
+        ::Holons::V1::HolonManifest.new(
+          identity: ::Holons::V1::HolonManifest::Identity.new(
+            schema: "holon/v1",
+            uuid: manifest.identity.uuid.to_s,
+            given_name: manifest.identity.given_name.to_s,
+            family_name: manifest.identity.family_name.to_s,
+            motto: manifest.identity.motto.to_s,
+            composer: manifest.identity.composer.to_s,
+            status: manifest.identity.status.to_s,
+            born: manifest.identity.born.to_s,
+            version: manifest.identity.respond_to?(:version) ? manifest.identity.version.to_s : "",
+            aliases: manifest.identity.aliases
+          ),
+          lang: manifest.identity.lang.to_s,
+          kind: manifest.kind.to_s,
+          build: ::Holons::V1::HolonManifest::Build.new(
+            runner: manifest.build_runner.to_s,
+            main: manifest.build_main.to_s
+          ),
+          artifacts: ::Holons::V1::HolonManifest::Artifacts.new(
+            binary: manifest.artifact_binary.to_s,
+            primary: manifest.artifact_primary.to_s
+          )
         )
       end
 
@@ -246,7 +296,7 @@ module Holons
       end
 
       def proto_service_doc(service)
-        ::Holonmeta::V1::ServiceDoc.new(
+        ::Holons::V1::ServiceDoc.new(
           name: service.name,
           description: service.description,
           methods: service.methods.map { |method| proto_method_doc(method) }
@@ -254,7 +304,7 @@ module Holons
       end
 
       def proto_method_doc(method)
-        ::Holonmeta::V1::MethodDoc.new(
+        ::Holons::V1::MethodDoc.new(
           name: method.name,
           description: method.description,
           input_type: method.input_type,
@@ -268,7 +318,7 @@ module Holons
       end
 
       def proto_field_doc(field)
-        ::Holonmeta::V1::FieldDoc.new(
+        ::Holons::V1::FieldDoc.new(
           name: field.name,
           type: field.type,
           number: field.number,
@@ -284,7 +334,7 @@ module Holons
       end
 
       def proto_enum_value_doc(value)
-        ::Holonmeta::V1::EnumValueDoc.new(
+        ::Holons::V1::EnumValueDoc.new(
           name: value.name,
           number: value.number,
           description: value.description
@@ -296,7 +346,7 @@ module Holons
 
         require_grpc_describe_support!
 
-        @holon_meta_service_class = Class.new(::Holonmeta::V1::HolonMeta::Service) do
+        @holon_meta_service_class = Class.new(::Holons::V1::HolonMeta::Service) do
           def initialize(response)
             @response = response
           end
@@ -310,9 +360,16 @@ module Holons
       def require_grpc_describe_support!
         return unless @grpc_describe_loaded.nil?
 
-        require_relative "../gen/holonmeta/v1/holonmeta_pb"
-        require_relative "../gen/holonmeta/v1/holonmeta_services_pb"
+        ensure_generated_proto_load_path!
+        require_relative "../gen/holons/v1/manifest_pb"
+        require_relative "../gen/holons/v1/describe_pb"
+        require_relative "../gen/holons/v1/describe_services_pb"
         @grpc_describe_loaded = true
+      end
+
+      def ensure_generated_proto_load_path!
+        gen_root = File.expand_path("../gen", __dir__)
+        $LOAD_PATH.unshift(gen_root) unless $LOAD_PATH.include?(gen_root)
       end
 
       def service_doc(service, index)

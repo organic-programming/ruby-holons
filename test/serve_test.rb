@@ -9,8 +9,9 @@ require "tmpdir"
 require_relative "../lib/holons"
 
 begin
-  require_relative "../lib/gen/holonmeta/v1/holonmeta_pb"
-  require_relative "../lib/gen/holonmeta/v1/holonmeta_services_pb"
+  require_relative "../lib/gen/holons/v1/manifest_pb"
+  require_relative "../lib/gen/holons/v1/describe_pb"
+  require_relative "../lib/gen/holons/v1/describe_services_pb"
   HOLONMETA_RUNTIME_AVAILABLE = true
 rescue LoadError
   HOLONMETA_RUNTIME_AVAILABLE = false
@@ -29,7 +30,7 @@ class ServeTest < Minitest::Test
     end
   end
 
-  def test_run_with_options_auto_registers_holonmeta_over_tcp
+  def test_run_with_options_auto_registers_describe_over_tcp
     with_serve_fixture do |fixture|
       stdin, stdout, stderr, wait_thr = Open3.popen3(
         RbConfig.ruby,
@@ -45,8 +46,9 @@ class ServeTest < Minitest::Test
         channel = Holons.connect(uri)
         begin
           response = describe(channel)
-          assert_equal "serve-helper", response.slug
-          assert_equal "Reply precisely.", response.motto
+          assert_equal "Serve", response.manifest.identity.given_name
+          assert_equal "Helper", response.manifest.identity.family_name
+          assert_equal "Reply precisely.", response.manifest.identity.motto
           assert_equal ["echo.v1.Echo"], response.services.map(&:name)
         ensure
           Holons.disconnect(channel)
@@ -66,7 +68,7 @@ class ServeTest < Minitest::Test
         channel = Holons.connect(fixture[:slug])
         begin
           response = describe(channel)
-          assert_equal "serve-helper", response.slug
+          assert_equal "Serve", response.manifest.identity.given_name
           assert_equal ["echo.v1.Echo"], response.services.map(&:name)
         ensure
           Holons.disconnect(channel)
@@ -78,14 +80,14 @@ class ServeTest < Minitest::Test
   private
 
   def describe(channel)
-    stub = Holonmeta::V1::HolonMeta::Stub.new(
+    stub = Holons::V1::HolonMeta::Stub.new(
       "unused",
       :this_channel_is_insecure,
       channel_override: channel,
       timeout: 5
     )
 
-    stub.describe(Holonmeta::V1::DescribeRequest.new)
+    stub.describe(Holons::V1::DescribeRequest.new)
   end
 
   def with_serve_fixture
@@ -150,7 +152,7 @@ class ServeTest < Minitest::Test
     <<~PROTO
       syntax = "proto3";
 
-      package holonmeta.test.v1;
+      package holons.test.v1;
 
       option (holons.v1.manifest) = {
         identity: {
