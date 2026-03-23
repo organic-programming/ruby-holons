@@ -64,15 +64,14 @@ class DescribeTest < Minitest::Test
   end
 
   def test_provider_describe_returns_response
-    with_echo_holon do |root|
-      provider = Holons::Describe.service(
-        proto_dir: File.join(root, "protos")
-      )
+    skip "google-protobuf support is unavailable in this Ruby environment" unless DESCRIBE_RUNTIME_AVAILABLE
 
-      response = provider.describe(Holons::Describe::DescribeRequest.new)
-      assert_equal "Echo", response.manifest.identity.given_name
-      assert_equal ["echo.v1.Echo"], response.services.map(&:name)
-    end
+    Holons::Describe.use_static_response(static_describe_response)
+    provider = Holons::Describe.service
+
+    response = provider.describe(Holons::Describe::DescribeRequest.new)
+    assert_equal "Static", response.manifest.identity.given_name
+    assert_equal ["static.v1.Echo"], response.services.map(&:name)
   end
 
   def test_build_response_without_proto_files

@@ -7,15 +7,43 @@ module Holons
     :clade, :status, :born, :lang, :parents, :reproduction, :generated_by,
     :proto_status, :aliases,
     keyword_init: true
-  )
+  ) do
+    def slug
+      given = given_name.to_s.strip
+      family = family_name.to_s.strip.sub(/\?\z/, "")
+      return "" if given.empty? && family.empty?
+
+      "#{given}-#{family}".strip.downcase.tr(" ", "-").gsub(/\A-+|-+\z/, "")
+    end
+  end
   ResolvedManifest = Struct.new(
-    :identity, :kind, :build_runner, :build_main, :artifact_binary, :artifact_primary,
+    :identity, :kind, :build_runner, :build_main, :artifact_binary, :artifact_primary, :source_path,
     keyword_init: true
   )
 
   module Identity
+    PROTO_MANIFEST_FILE_NAME = "holon.proto"
+
     def self.parse(path)
       parse_holon(path)
+    end
+
+    def self.resolve(root)
+      resolve_proto_file(resolve_manifest_path(root))
+    end
+
+    def self.resolve_manifest(root)
+      resolved = resolve(root)
+      [resolved.identity, resolved.source_path]
+    end
+
+    def self.resolve_proto_file(path)
+      expanded = File.expand_path(path.to_s)
+      unless File.basename(expanded) == PROTO_MANIFEST_FILE_NAME
+        raise "#{expanded} is not a #{PROTO_MANIFEST_FILE_NAME} file"
+      end
+
+      parse_manifest(expanded)
     end
 
     # Parse a holon.proto manifest file.
@@ -24,9 +52,10 @@ module Holons
     end
 
     def self.parse_manifest(path)
-      text = File.read(path)
+      expanded = File.expand_path(path.to_s)
+      text = File.read(expanded)
       manifest_block = extract_manifest_block(text)
-      raise "#{path}: missing holons.v1.manifest option in holon.proto" if manifest_block.to_s.empty?
+      raise "#{expanded}: missing holons.v1.manifest option in holon.proto" if manifest_block.to_s.empty?
 
       identity_block = extract_named_block(manifest_block, "identity")
       lineage_block = extract_named_block(manifest_block, "lineage")
@@ -54,22 +83,23 @@ module Holons
         build_runner: extract_string(build_block, "runner"),
         build_main: extract_string(build_block, "main"),
         artifact_binary: extract_string(artifacts_block, "binary"),
-        artifact_primary: extract_string(artifacts_block, "primary")
+        artifact_primary: extract_string(artifacts_block, "primary"),
+        source_path: expanded
       )
     end
 
     def self.find_holon_proto(root)
       expanded = File.expand_path(root.to_s)
-      return expanded if File.file?(expanded) && File.basename(expanded) == "holon.proto"
+      return expanded if File.file?(expanded) && File.basename(expanded) == PROTO_MANIFEST_FILE_NAME
       return nil unless File.directory?(expanded)
 
-      direct = File.join(expanded, "holon.proto")
+      direct = File.join(expanded, PROTO_MANIFEST_FILE_NAME)
       return direct if File.file?(direct)
 
-      api_v1 = File.join(expanded, "api", "v1", "holon.proto")
+      api_v1 = File.join(expanded, "api", "v1", PROTO_MANIFEST_FILE_NAME)
       return api_v1 if File.file?(api_v1)
 
-      Dir.glob(File.join(expanded, "**", "holon.proto")).sort.first
+      Dir.glob(File.join(expanded, "**", PROTO_MANIFEST_FILE_NAME)).sort.first
     end
 
     def self.resolve_manifest_path(root)

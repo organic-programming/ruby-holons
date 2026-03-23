@@ -16,7 +16,7 @@ class DiscoverTest < Minitest::Test
         write_holon(root, skipped, uuid: "ignored-#{File.basename(skipped)}", given_name: "Ignored", family_name: "Holon", binary: "ignored-holon")
       end
 
-      entries = Holons.discover(root)
+      entries = Holons::Discover.discover(root)
       assert_equal 2, entries.length
 
       alpha = entries.find { |entry| entry.uuid == "uuid-alpha" }
@@ -48,19 +48,19 @@ class DiscoverTest < Minitest::Test
         ENV["OPPATH"] = File.join(root, "runtime")
         ENV["OPBIN"] = File.join(root, "runtime", "bin")
 
-        local = Holons.discover_local
+        local = Holons::Discover.discover_local
         assert_equal 1, local.length
         assert_equal "rob-go", local.first.slug
 
-        by_slug = Holons.find_by_slug("rob-go")
+        by_slug = Holons::Discover.find_by_slug("rob-go")
         refute_nil by_slug
         assert_equal "c7f3a1b2-1111-1111-1111-111111111111", by_slug.uuid
 
-        by_uuid = Holons.find_by_uuid("c7f3a1b2")
+        by_uuid = Holons::Discover.find_by_uuid("c7f3a1b2")
         refute_nil by_uuid
         assert_equal "rob-go", by_uuid.slug
 
-        assert_nil Holons.find_by_slug("missing")
+        assert_nil Holons::Discover.find_by_slug("missing")
       ensure
         Dir.chdir(original_dir)
         ENV["OPPATH"] = original_oppath
@@ -80,7 +80,7 @@ class DiscoverTest < Minitest::Test
         binary: "gabriel-greeting-ruby"
       )
 
-      entries = Holons.discover(root)
+      entries = Holons::Discover.discover(root)
       assert_equal 1, entries.length
 
       entry = entries.first

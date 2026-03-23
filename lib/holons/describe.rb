@@ -180,16 +180,14 @@ module Holons
     end
 
     class Provider
-      def initialize(proto_dir:, manifest_path: nil)
-        @proto_dir = proto_dir
-        @manifest_path = Describe.send(:resolve_manifest_path, proto_dir, manifest_path)
+      def initialize(*_unused, **_unused)
       end
 
       def describe(_request = DescribeRequest.new)
-        Describe.build_response(
-          proto_dir: @proto_dir,
-          manifest_path: @manifest_path
-        )
+        response = Describe.static_response
+        raise ErrNoIncodeDescription if response.nil?
+
+        response
       end
     end
 
@@ -236,11 +234,8 @@ module Holons
         )
       end
 
-      def service(proto_dir:, manifest_path: nil)
-        Provider.new(
-          proto_dir: proto_dir,
-          manifest_path: manifest_path
-        )
+      def service(*_unused, **_unused)
+        Provider.new
       end
 
       private

@@ -146,11 +146,7 @@ module Holons
     end
 
     def slug_for(identity)
-      given = identity.given_name.to_s.strip
-      family = identity.family_name.to_s.strip.sub(/\?\z/, "")
-      return "" if given.empty? && family.empty?
-
-      "#{given}-#{family}".strip.downcase.tr(" ", "-").gsub(/\A-+|-+\z/, "")
+      identity.slug
     end
 
     def should_skip_dir?(root, dir, name)
@@ -161,7 +157,7 @@ module Holons
 
     def manifest_file?(root, path, name)
       return false unless File.file?(path)
-      name == "holon.proto"
+      name == Identity::PROTO_MANIFEST_FILE_NAME
     end
 
     def manifest_root(path)
@@ -204,6 +200,34 @@ module Holons
 
     def cache_dir
       File.join(op_path, "cache")
+    end
+  end
+
+  module Discover
+    class << self
+      def discover(root)
+        Holons.discover(root)
+      end
+
+      def discover_local
+        Holons.discover_local
+      end
+
+      def discover_all
+        Holons.discover_all
+      end
+
+      def find_by_slug(slug)
+        Holons.find_by_slug(slug)
+      end
+
+      def discover_by_slug(slug)
+        Holons.discover_by_slug(slug)
+      end
+
+      def find_by_uuid(prefix)
+        Holons.find_by_uuid(prefix)
+      end
     end
   end
 end

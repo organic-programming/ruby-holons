@@ -173,6 +173,11 @@ class HolonsTest < Minitest::Test
     tmp.close!
   end
 
+  def test_identity_slug_trims_question_mark
+    identity = Holons::HolonIdentity.new(given_name: "Rob", family_name: "Go?")
+    assert_equal "rob-go", identity.slug
+  end
+
   def test_parse_proto_manifest
     Dir.mktmpdir("ruby-holons-proto-identity-") do |dir|
       path = File.join(dir, "holon.proto")
@@ -217,6 +222,19 @@ class HolonsTest < Minitest::Test
       assert_equal "draft", identity.status
       assert_equal "2026-03-16", identity.born
       assert_equal "ruby", identity.lang
+
+      resolved = Holons::Identity.resolve_proto_file(path)
+      assert_equal File.expand_path(path), resolved.source_path
+      assert_equal "proto-uuid", resolved.identity.uuid
+      assert_equal "gabriel-greeting-ruby", resolved.identity.slug
+
+      resolved_from_dir = Holons::Identity.resolve(dir)
+      assert_equal File.expand_path(path), resolved_from_dir.source_path
+      assert_equal "Gabriel", resolved_from_dir.identity.given_name
+
+      resolved_identity, source_path = Holons::Identity.resolve_manifest(dir)
+      assert_equal "proto-uuid", resolved_identity.uuid
+      assert_equal File.expand_path(path), source_path
     end
   end
 
