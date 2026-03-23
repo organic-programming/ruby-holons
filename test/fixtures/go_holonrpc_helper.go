@@ -2,13 +2,20 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -35,6 +42,10 @@ func main() {
 	mode := "echo"
 	if len(os.Args) > 1 {
 		mode = os.Args[1]
+	}
+	useTLS := mode == "echo-tls"
+	if useTLS {
+		mode = "echo"
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -116,12 +127,23 @@ func main() {
 
 	srv := &http.Server{Handler: h}
 	go func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			log.Printf("server error: %v", err)
+		var serveErr error
+		if useTLS {
+			certFile, keyFile := writeSelfSignedCert()
+			serveErr = srv.ServeTLS(ln, certFile, keyFile)
+		} else {
+			serveErr = srv.Serve(ln)
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			log.Printf("server error: %v", serveErr)
 		}
 	}()
 
-	fmt.Printf("ws://%s/rpc\n", ln.Addr().String())
+	if useTLS {
+		fmt.Printf("wss://%s/rpc\n", ln.Addr().String())
+	} else {
+		fmt.Printf("ws://%s/rpc\n", ln.Addr().String())
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -205,4 +227,55 @@ func waitForResponse(ctx context.Context, c *websocket.Conn, expectedID string) 
 func mustRaw(v interface{}) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return json.RawMessage(b)
+}
+
+func writeSelfSignedCert() (string, string) {
+	dir, err := os.MkdirTemp("", "holonrpc-tls-")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName: "127.0.0.1",
+		},
+		NotBefore:             time.Now().Add(-1 * time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		log.Fatal(err)
+	}
+
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		log.Fatal(err)
+	}
+
+	return certPath, keyPath
 }

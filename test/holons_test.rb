@@ -579,6 +579,34 @@ class HolonRPCTest < Minitest::Test
     end
   end
 
+  def test_echo_roundtrip_with_go_tls_helper
+    with_go_helper("echo-tls") do |url|
+      client = Holons::HolonRPCClient.new(
+        heartbeat_interval_ms: 250,
+        heartbeat_timeout_ms: 250,
+        reconnect_min_delay_ms: 100,
+        reconnect_max_delay_ms: 400
+      )
+
+      client.connect(url)
+      out = client.invoke("echo.v1.Echo/Ping", { "message" => "hello-tls" })
+      assert_equal "hello-tls", out["message"]
+      client.close
+    end
+  end
+
+  def test_holon_rpc_client_rejects_http_endpoint
+    client = Holons::HolonRPCClient.new(connect_timeout_ms: 250)
+
+    error = assert_raises(RuntimeError) do
+      client.connect("http://127.0.0.1:8080/api/v1/rpc")
+    end
+
+    assert_match(/ws:\/\/ or wss:\/\//, error.message)
+  ensure
+    client&.close
+  end
+
   def test_register_handles_server_calls
     with_go_helper("echo") do |url|
       client = Holons::HolonRPCClient.new(
