@@ -201,8 +201,11 @@ module Holons
     def socket_to_stdin_loop(socket)
       loop do
         chunk = socket.readpartial(16 * 1024)
-        @child_stdin.write(chunk)
-        @child_stdin.flush
+        child_stdin = @mutex.synchronize { @child_stdin }
+        break if child_stdin.nil? || child_stdin.closed?
+
+        child_stdin.write(chunk)
+        child_stdin.flush
       end
     rescue EOFError, IOError, Errno::EPIPE, SystemCallError
       nil
