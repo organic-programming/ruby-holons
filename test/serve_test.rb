@@ -100,6 +100,38 @@ class ServeTest < Minitest::Test
     end
   end
 
+  def test_run_with_options_serves_static_describe_without_adjacent_proto_files
+    with_serve_fixture(include_manifest: false, include_proto_dir: false) do |fixture|
+      assert_empty Dir.glob(File.join(fixture[:holon_dir], "**", "*.proto")).sort
+
+      stdin, stdout, stderr, wait_thr = Open3.popen3(
+        RbConfig.ruby,
+        fixture[:script_path],
+        "serve",
+        "--listen",
+        "tcp://127.0.0.1:0",
+        chdir: fixture[:holon_dir]
+      )
+
+      begin
+        uri = read_advertised_uri(stdout, stderr)
+        channel = Holons.connect(uri)
+        begin
+          response = describe(channel)
+          assert_equal "Serve", response.manifest.identity.given_name
+          assert_equal ["echo.v1.Echo"], response.services.map(&:name)
+        ensure
+          Holons.disconnect(channel)
+        end
+      ensure
+        terminate_process(wait_thr.pid)
+        stdin.close unless stdin.closed?
+        stdout.close unless stdout.closed?
+        stderr.close unless stderr.closed?
+      end
+    end
+  end
+
   private
 
   def describe(channel)
@@ -113,11 +145,11 @@ class ServeTest < Minitest::Test
     stub.describe(Holons::V1::DescribeRequest.new)
   end
 
-  def with_serve_fixture(register_static: true)
+  def with_serve_fixture(register_static: true, include_manifest: true, include_proto_dir: true)
     Dir.mktmpdir("ruby-holons-serve-") do |workspace|
       holon_dir = File.join(workspace, "holons", "serve-helper")
       FileUtils.mkdir_p(holon_dir)
-      FileUtils.cp_r(proto_fixture_dir, File.join(holon_dir, "protos"))
+      FileUtils.cp_r(proto_fixture_dir, File.join(holon_dir, "protos")) if include_proto_dir
 
       script_path = File.join(holon_dir, "serve_helper.rb")
       wrapper_path = File.join(holon_dir, "serve-helper")
@@ -126,7 +158,7 @@ class ServeTest < Minitest::Test
       File.chmod(0o755, script_path)
       File.chmod(0o755, wrapper_path)
 
-      File.write(File.join(holon_dir, "holon.proto"), holon_manifest(wrapper_path))
+      File.write(File.join(holon_dir, "holon.proto"), holon_manifest(wrapper_path)) if include_manifest
 
       yield(
         workspace: workspace,
