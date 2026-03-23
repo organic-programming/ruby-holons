@@ -36,6 +36,10 @@ module Holons
 
     ErrNoIncodeDescription = NoIncodeDescriptionError
 
+    @static_response = nil
+    @grpc_describe_loaded = nil
+    @holon_meta_service_class = nil
+
     class DescribeRequest
     end
 
