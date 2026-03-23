@@ -595,7 +595,7 @@ class HolonRPCTest < Minitest::Test
     end
   end
 
-  def test_holon_rpc_client_rejects_http_endpoint
+  def test_websocket_holon_rpc_client_rejects_http_endpoint
     client = Holons::HolonRPCClient.new(connect_timeout_ms: 250)
 
     error = assert_raises(RuntimeError) do

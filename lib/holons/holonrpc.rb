@@ -3,6 +3,7 @@
 require "base64"
 require "digest/sha1"
 require "json"
+require "net/http"
 require "openssl"
 require "securerandom"
 require "socket"
@@ -16,6 +17,186 @@ module Holons
       super("rpc error #{code}: #{message}")
       @code = code
       @data = data
+    end
+  end
+
+  HolonRPCSSEEvent = Struct.new(:event, :id, :result, :error, keyword_init: true)
+
+  class HolonRPCHTTPClient
+    def initialize(base_url, open_timeout: 10, read_timeout: 10, ssl_verify: false)
+      @base_url = normalize_base_url(base_url)
+      @open_timeout = open_timeout
+      @read_timeout = read_timeout
+      @ssl_verify = ssl_verify
+    end
+
+    def invoke(method, params = {})
+      response = perform_request(
+        Net::HTTP::Post,
+        method_uri(method),
+        accept: "application/json",
+        body: encode_params(params)
+      )
+
+      decode_http_rpc_response(response)
+    end
+
+    def stream(method, params = {})
+      response = perform_request(
+        Net::HTTP::Post,
+        method_uri(method),
+        accept: "text/event-stream",
+        body: encode_params(params)
+      )
+
+      read_sse_events(response)
+    end
+
+    def stream_query(method, params = {})
+      uri = method_uri(method)
+      values = []
+      params.to_h.each do |key, value|
+        Array(value).each do |entry|
+          values << [key.to_s, entry.to_s]
+        end
+      end
+      uri.query = URI.encode_www_form(values) unless values.empty?
+
+      response = perform_request(
+        Net::HTTP::Get,
+        uri,
+        accept: "text/event-stream"
+      )
+
+      read_sse_events(response)
+    end
+
+    private
+
+    def normalize_base_url(base_url)
+      trimmed = base_url.to_s.strip.sub(%r{/*\z}, "")
+      raise ArgumentError, "base_url is required" if trimmed.empty?
+
+      trimmed
+    end
+
+    def method_uri(method)
+      trimmed = method.to_s.strip.gsub(%r{\A/+}, "")
+      raise ArgumentError, "method is required" if trimmed.empty?
+
+      URI.parse("#{@base_url}/#{trimmed}")
+    end
+
+    def encode_params(params)
+      JSON.generate(params.is_a?(Hash) ? params : {})
+    end
+
+    def perform_request(request_class, uri, accept:, body: nil)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.open_timeout = @open_timeout if http.respond_to?(:open_timeout=)
+      http.read_timeout = @read_timeout if http.respond_to?(:read_timeout=)
+
+      if uri.scheme == "https"
+        http.use_ssl = true
+        http.verify_mode = @ssl_verify ? OpenSSL::SSL::VERIFY_PEER : OpenSSL::SSL::VERIFY_NONE
+      end
+
+      request = request_class.new(uri)
+      request["Accept"] = accept
+      if body
+        request["Content-Type"] = "application/json"
+        request.body = body
+      end
+
+      http.request(request)
+    rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError, Timeout::Error => e
+      raise RuntimeError, "holon-rpc http request failed: #{e.message}"
+    end
+
+    def decode_http_rpc_response(response)
+      parsed = parse_json(response.body.to_s)
+
+      if parsed.is_a?(Hash) && parsed["error"].is_a?(Hash)
+        error = parsed["error"]
+        code = error["code"].is_a?(Numeric) ? error["code"].to_i : -32603
+        message = error["message"].to_s.strip
+        message = "internal error" if message.empty?
+        raise HolonRPCResponseError.new(code, message, error["data"])
+      end
+
+      if parsed.is_a?(Hash) && parsed.key?("result")
+        return parsed["result"].is_a?(Hash) ? parsed["result"] : {}
+      end
+
+      raise RuntimeError, "holon-rpc http status #{response.code}" if response.code.to_i >= 400
+
+      parsed.is_a?(Hash) ? parsed : {}
+    end
+
+    def read_sse_events(response)
+      decode_http_rpc_response(response) if response.code.to_i >= 400
+
+      events = []
+      current_event = nil
+      current_id = nil
+      current_data = []
+
+      flush = lambda do
+        return if current_event.nil? && current_id.nil? && current_data.empty?
+
+        payload = current_data.join("\n")
+        event = HolonRPCSSEEvent.new(
+          event: current_event.to_s,
+          id: current_id.to_s,
+          result: {},
+          error: nil
+        )
+
+        if %w[message error].include?(event.event)
+          parsed = parse_json(payload)
+          if parsed.is_a?(Hash) && parsed["error"].is_a?(Hash)
+            error = parsed["error"]
+            event.error = HolonRPCResponseError.new(
+              error["code"].is_a?(Numeric) ? error["code"].to_i : -32603,
+              error["message"].to_s.strip.empty? ? "internal error" : error["message"].to_s,
+              error["data"]
+            )
+          elsif parsed.is_a?(Hash) && parsed.key?("result")
+            event.result = parsed["result"].is_a?(Hash) ? parsed["result"] : {}
+          end
+        end
+
+        events << event
+      end
+
+      response.body.to_s.each_line do |raw_line|
+        line = raw_line.chomp
+        if line.empty?
+          flush.call
+          current_event = nil
+          current_id = nil
+          current_data = []
+          next
+        end
+
+        case
+        when line.start_with?("event:")
+          current_event = line.delete_prefix("event:").strip
+        when line.start_with?("id:")
+          current_id = line.delete_prefix("id:").strip
+        when line.start_with?("data:")
+          current_data << line.delete_prefix("data:").strip
+        end
+      end
+
+      flush.call
+      events
+    end
+
+    def parse_json(text)
+      JSON.parse(text)
+    rescue JSON::ParserError
+      nil
     end
   end
 
