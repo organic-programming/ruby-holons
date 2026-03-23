@@ -4,7 +4,30 @@ require "minitest/autorun"
 require "tmpdir"
 require_relative "../lib/holons"
 
+begin
+  require_relative "../lib/gen/holons/v1/manifest_pb"
+  require_relative "../lib/gen/holons/v1/describe_pb"
+  require_relative "../lib/gen/holons/v1/describe_services_pb"
+  DESCRIBE_RUNTIME_AVAILABLE = true
+rescue LoadError
+  DESCRIBE_RUNTIME_AVAILABLE = false
+end
+
 class DescribeTest < Minitest::Test
+  FakeServer = Struct.new(:handlers) do
+    def initialize
+      super([])
+    end
+
+    def handle(service)
+      handlers << service
+    end
+  end
+
+  def teardown
+    Holons::Describe.use_static_response(nil) if DESCRIBE_RUNTIME_AVAILABLE
+  end
+
   def test_build_response_from_echo_proto
     with_echo_holon do |root|
       response = Holons::Describe.build_response(
@@ -133,7 +156,60 @@ class DescribeTest < Minitest::Test
     end
   end
 
+  def test_register_requires_static_response
+    skip "google-protobuf support is unavailable in this Ruby environment" unless DESCRIBE_RUNTIME_AVAILABLE
+
+    error = assert_raises(Holons::Describe::ErrNoIncodeDescription) do
+      Holons::Describe.register(FakeServer.new)
+    end
+
+    assert_equal "no Incode Description registered — run op build", error.message
+  end
+
+  def test_register_serves_registered_static_response
+    skip "google-protobuf support is unavailable in this Ruby environment" unless DESCRIBE_RUNTIME_AVAILABLE
+
+    Holons::Describe.use_static_response(static_describe_response)
+
+    server = FakeServer.new
+    Holons::Describe.register(server)
+
+    response = server.handlers.fetch(0).describe(Holons::V1::DescribeRequest.new, nil)
+    assert_equal "Static", response.manifest.identity.given_name
+    assert_equal ["static.v1.Echo"], response.services.map(&:name)
+  end
+
   private
+
+  def static_describe_response
+    Holons::V1::DescribeResponse.new(
+      manifest: Holons::V1::HolonManifest.new(
+        identity: Holons::V1::HolonManifest::Identity.new(
+          schema: "holon/v1",
+          uuid: "static-holon-0000",
+          given_name: "Static",
+          family_name: "Holon",
+          motto: "Registered at startup.",
+          composer: "describe-test",
+          status: "draft",
+          born: "2026-03-23"
+        ),
+        lang: "ruby"
+      ),
+      services: [
+        Holons::V1::ServiceDoc.new(
+          name: "static.v1.Echo",
+          description: "Static test service.",
+          methods: [
+            Holons::V1::MethodDoc.new(
+              name: "Ping",
+              description: "Replies with the payload."
+            )
+          ]
+        )
+      ]
+    )
+  end
 
   def echo_holon_dir
     File.expand_path("../../go-holons/pkg/describe/testdata/echoholon", __dir__)

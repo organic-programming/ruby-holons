@@ -28,6 +28,14 @@ module Holons
       REQUIRED = 4
     end
 
+    class NoIncodeDescriptionError < StandardError
+      def initialize
+        super("no Incode Description registered — run op build")
+      end
+    end
+
+    ErrNoIncodeDescription = NoIncodeDescriptionError
+
     class DescribeRequest
     end
 
@@ -186,14 +194,30 @@ module Holons
     end
 
     class << self
-      def register(server, proto_dir:, manifest_path: nil)
+      def use_static_response(response)
+        if response.nil?
+          @static_response = nil
+          return
+        end
+
+        require_grpc_describe_support!
+        unless response.is_a?(::Holons::V1::DescribeResponse)
+          raise ArgumentError, "static response must be a Holons::V1::DescribeResponse"
+        end
+
+        @static_response = clone_proto_message(response)
+      end
+
+      def static_response
+        clone_proto_message(@static_response)
+      end
+
+      def register(server, **_unused)
         raise ArgumentError, "grpc server is required" if server.nil?
 
-        resolved_manifest_path = resolve_manifest_path(proto_dir, manifest_path)
-        response = proto_response(
-          proto_dir: proto_dir,
-          manifest_path: resolved_manifest_path
-        )
+        response = static_response
+        raise ErrNoIncodeDescription if response.nil?
+
         server.handle(holon_meta_service_class.new(response))
       end
 
@@ -220,6 +244,12 @@ module Holons
       end
 
       private
+
+      def clone_proto_message(message)
+        return nil if message.nil?
+
+        message.class.decode(message.class.encode(message))
+      end
 
       def proto_response(proto_dir:, manifest_path:)
         require_grpc_describe_support!

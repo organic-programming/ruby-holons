@@ -30,7 +30,7 @@ class ServeTest < Minitest::Test
     end
   end
 
-  def test_run_with_options_auto_registers_describe_over_tcp
+  def test_run_with_options_serves_registered_static_describe_over_tcp
     with_serve_fixture do |fixture|
       stdin, stdout, stderr, wait_thr = Open3.popen3(
         RbConfig.ruby,
@@ -62,6 +62,29 @@ class ServeTest < Minitest::Test
     end
   end
 
+  def test_run_with_options_fails_without_registered_static_describe
+    with_serve_fixture(register_static: false) do |fixture|
+      stdin, stdout, stderr, wait_thr = Open3.popen3(
+        RbConfig.ruby,
+        fixture[:script_path],
+        "serve",
+        "--listen",
+        "tcp://127.0.0.1:0",
+        chdir: fixture[:holon_dir]
+      )
+
+      status = wait_thr.value
+      error_output = stderr.read
+
+      refute status.success?
+      assert_includes error_output, "no Incode Description registered — run op build"
+    ensure
+      stdin.close unless stdin.nil? || stdin.closed?
+      stdout.close unless stdout.nil? || stdout.closed?
+      stderr.close unless stderr.nil? || stderr.closed?
+    end
+  end
+
   def test_connect_slug_reaches_stdio_serve_helper
     with_serve_fixture do |fixture|
       with_holon_root(fixture[:workspace]) do
@@ -90,7 +113,7 @@ class ServeTest < Minitest::Test
     stub.describe(Holons::V1::DescribeRequest.new)
   end
 
-  def with_serve_fixture
+  def with_serve_fixture(register_static: true)
     Dir.mktmpdir("ruby-holons-serve-") do |workspace|
       holon_dir = File.join(workspace, "holons", "serve-helper")
       FileUtils.mkdir_p(holon_dir)
@@ -98,7 +121,7 @@ class ServeTest < Minitest::Test
 
       script_path = File.join(holon_dir, "serve_helper.rb")
       wrapper_path = File.join(holon_dir, "serve-helper")
-      File.write(script_path, helper_script)
+      File.write(script_path, helper_script(register_static: register_static))
       File.write(wrapper_path, helper_wrapper(script_path))
       File.chmod(0o755, script_path)
       File.chmod(0o755, wrapper_path)
@@ -115,8 +138,9 @@ class ServeTest < Minitest::Test
     end
   end
 
-  def helper_script
+  def helper_script(register_static:)
     sdk_lib = File.expand_path("../lib", __dir__)
+    static_registration = register_static ? helper_static_registration : ""
 
     <<~RUBY
       #!/usr/bin/env ruby
@@ -124,12 +148,66 @@ class ServeTest < Minitest::Test
 
       $LOAD_PATH.unshift(#{sdk_lib.inspect})
       require "holons"
+      #{static_registration}
 
-      args = ARGV.dup
-      args.shift if args.first == "serve"
+      begin
+        args = ARGV.dup
+        args.shift if args.first == "serve"
 
-      parsed = Holons::Serve.parse_options(args)
-      Holons::Serve.run_with_options(parsed.listen_uri, ->(_server) {}, parsed.reflect)
+        parsed = Holons::Serve.parse_options(args)
+        Holons::Serve.run_with_options(parsed.listen_uri, ->(_server) {}, parsed.reflect)
+      rescue StandardError => e
+        warn(e.message)
+        exit 1
+      end
+    RUBY
+  end
+
+  def helper_static_registration
+    <<~RUBY
+      require "holons/v1/manifest_pb"
+      require "holons/v1/describe_pb"
+      require "holons/v1/describe_services_pb"
+
+      Holons::Describe.use_static_response(
+        Holons::V1::DescribeResponse.new(
+          manifest: Holons::V1::HolonManifest.new(
+            identity: Holons::V1::HolonManifest::Identity.new(
+              schema: "holon/v1",
+              uuid: "serve-helper-uuid",
+              given_name: "Serve",
+              family_name: "Helper",
+              motto: "Reply precisely.",
+              composer: "serve-test",
+              status: "draft",
+              born: "2026-03-23"
+            ),
+            lang: "ruby",
+            kind: "service",
+            build: Holons::V1::HolonManifest::Build.new(
+              runner: "ruby",
+              main: "serve_helper.rb"
+            ),
+            artifacts: Holons::V1::HolonManifest::Artifacts.new(
+              binary: "serve-helper"
+            )
+          ),
+          services: [
+            Holons::V1::ServiceDoc.new(
+              name: "echo.v1.Echo",
+              description: "Echo helper service.",
+              methods: [
+                Holons::V1::MethodDoc.new(
+                  name: "Ping",
+                  description: "Echoes the inbound message.",
+                  input_type: "echo.v1.PingRequest",
+                  output_type: "echo.v1.PingResponse"
+                )
+              ]
+            )
+          ]
+        )
+      )
     RUBY
   end
 

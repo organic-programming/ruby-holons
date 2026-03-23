@@ -74,13 +74,11 @@ module Holons
       end
 
       def auto_register_describe(server)
-        Describe.register(server, proto_dir: "./protos")
+        Describe.register(server)
+      rescue Describe::ErrNoIncodeDescription
+        raise
       rescue StandardError => e
-        # Skip if Describe was already registered by the holon's own register_services,
-        # or if no proto manifest is reachable from the current working directory.
-        return if e.message.include?("already registered")
-        return if e.message.include?("no holon.proto found near ")
-
+        warn("HolonMeta registration failed: #{e.message}")
         raise
       end
 
