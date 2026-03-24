@@ -12,7 +12,6 @@ module Holons
       Tcp = Struct.new(:socket)
       Unix = Struct.new(:socket, :path)
       Stdio = Struct.new(:address, :consumed)
-      Mem = Struct.new(:address, :server_io, :client_io, :server_consumed, :client_consumed)
       WS = Struct.new(:host, :port, :path, :secure, keyword_init: true)
     end
 
@@ -43,10 +42,6 @@ module Holons
         ParsedURI.new(raw: uri, scheme: "unix", host: nil, port: nil, path: path, secure: false)
       when "stdio"
         ParsedURI.new(raw: "stdio://", scheme: "stdio", host: nil, port: nil, path: nil, secure: false)
-      when "mem"
-        raw = uri.start_with?("mem://") ? uri : "mem://"
-        name = raw.delete_prefix("mem://")
-        ParsedURI.new(raw: raw, scheme: "mem", host: nil, port: nil, path: name, secure: false)
       when "ws", "wss"
         secure = s == "wss"
         prefix = secure ? "wss://" : "ws://"
@@ -73,9 +68,6 @@ module Holons
         Listener::Unix.new(listen_unix(parsed.path), parsed.path)
       when "stdio"
         Listener::Stdio.new("stdio://", false)
-      when "mem"
-        server_io, client_io = Socket.pair(:UNIX, :STREAM, 0)
-        Listener::Mem.new(parsed.raw || "mem://", server_io, client_io, false, false)
       when "ws", "wss"
         Listener::WS.new(
           host: parsed.host || "0.0.0.0",
@@ -102,34 +94,11 @@ module Holons
 
         listener.consumed = true
         Connection.new($stdin, $stdout, "stdio", false, false)
-      when Listener::Mem
-        raise RuntimeError, "mem:// server side already consumed" if listener.server_consumed || listener.server_io.nil?
-
-        io = listener.server_io
-        listener.server_io = nil
-        listener.server_consumed = true
-        Connection.new(io, io, "mem", true, true)
       when Listener::WS
         raise RuntimeError, "ws/wss runtime accept is unsupported (metadata-only listener)"
       else
         raise RuntimeError, "unsupported listener type"
       end
-    end
-
-    # Dial the client side of a mem:// listener.
-    def self.mem_dial(listener)
-      unless listener.is_a?(Listener::Mem)
-        raise ArgumentError, "mem_dial requires a mem:// listener"
-      end
-
-      if listener.client_consumed || listener.client_io.nil?
-        raise RuntimeError, "mem:// client side already consumed"
-      end
-
-      io = listener.client_io
-      listener.client_io = nil
-      listener.client_consumed = true
-      Connection.new(io, io, "mem", true, true)
     end
 
     def self.conn_read(connection, max_bytes = 4096)

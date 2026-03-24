@@ -14,7 +14,6 @@ class HolonsTest < Minitest::Test
     assert_equal "tcp", Holons::Transport.scheme("tcp://:9090")
     assert_equal "unix", Holons::Transport.scheme("unix:///tmp/x.sock")
     assert_equal "stdio", Holons::Transport.scheme("stdio://")
-    assert_equal "mem", Holons::Transport.scheme("mem://")
     assert_equal "ws", Holons::Transport.scheme("ws://127.0.0.1:8080/grpc")
     assert_equal "wss", Holons::Transport.scheme("wss://example.com:443/grpc")
   end
@@ -45,14 +44,11 @@ class HolonsTest < Minitest::Test
     assert parsed.secure
   end
 
-  def test_stdio_and_mem_variants
+  def test_stdio_variant
     stdio = Holons::Transport.listen("stdio://")
-    mem = Holons::Transport.listen("mem://")
 
     assert_instance_of Holons::Transport::Listener::Stdio, stdio
-    assert_instance_of Holons::Transport::Listener::Mem, mem
     assert_equal "stdio://", stdio.address
-    assert_equal "mem://", mem.address
   end
 
   def test_runtime_tcp_roundtrip
@@ -90,19 +86,6 @@ class HolonsTest < Minitest::Test
     assert_equal "stdio", conn.scheme
     Holons::Transport.close_connection(conn)
     assert_raises(RuntimeError) { Holons::Transport.accept(stdio) }
-  end
-
-  def test_runtime_mem_roundtrip
-    mem = Holons::Transport.listen("mem://ruby-test")
-    client = Holons::Transport.mem_dial(mem)
-    server = Holons::Transport.accept(mem)
-
-    Holons::Transport.conn_write(client, "mem")
-    payload = Holons::Transport.conn_read(server, 3)
-    assert_equal "mem", payload
-
-    Holons::Transport.close_connection(server)
-    Holons::Transport.close_connection(client)
   end
 
   def test_ws_runtime_unsupported
